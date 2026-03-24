@@ -5,13 +5,13 @@ import json
 import numpy as np
 from PIL import Image
 import easyocr
-import base64  # <-- 专门用来处理背景图片的库
+import base64
 
 # 设置页面外观
 st.set_page_config(page_title="专属英语听写", layout="centered")
 
 # ==========================================
-# 🌟 新增：网页背景图片功能
+# 🌟 网页背景图片功能
 # ==========================================
 def set_background(image_file):
     try:
@@ -26,7 +26,6 @@ def set_background(image_file):
             background-position: center;
             background-attachment: fixed;
         }}
-        /* 给主要内容区域加一层半透明的白色底板，防止背景太花看不清字 */
         .stMainBlockContainer {{
             background-color: rgba(255, 255, 255, 0.85);
             padding: 2rem;
@@ -38,8 +37,8 @@ def set_background(image_file):
     except FileNotFoundError:
         st.warning("找不到背景图片 angel.jpg，请确保它已被压缩并放在了当前文件夹中哦！")
 
-# 启动背景图
 set_background("angel.jpg")
+
 # ==========================================
 
 st.title("🎧 自动化分组听写器 (带 AI 视觉)")
@@ -55,7 +54,8 @@ if 'input_text' not in st.session_state:
 # --- 加载 OCR 模型 ---
 @st.cache_resource
 def load_ocr_model():
-    return easyocr.Reader(['en'], gpu=True)
+    # 在云端部署时如果没有 GPU，它会自动降级使用 CPU
+    return easyocr.Reader(['en'], gpu=False) 
 
 # --- 1. 输入与设置区域 ---
 with st.expander("⚙️ 第一步：导入单词与设置", expanded=not st.session_state.word_list):
@@ -78,7 +78,7 @@ with st.expander("⚙️ 第一步：导入单词与设置", expanded=not st.ses
             st.image(image, caption="待识别的图片", use_container_width=True)
             
             if st.button("🔍 开始提取单词", type="secondary"):
-                with st.spinner("显卡正在全力识别中..."):
+                with st.spinner("正在全力识别中..."):
                     try:
                         reader = load_ocr_model()
                         img_array = np.array(image.convert('RGB'))
@@ -139,11 +139,9 @@ if st.session_state.word_list:
         
         col1, col2 = st.columns(2)
         
-      with col1:
+        with col1:
             if st.button("▶️ 自动连播本组单词", use_container_width=True):
                 js_words = json.dumps(current_group_words)
-                
-                # 🌟 关键修改：在代码开头加入一个随机数注释，强制 Streamlit 每次点击都重新渲染执行
                 js_code = f"""
                 <script>
                 window.speechSynthesis.cancel(); 
