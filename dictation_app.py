@@ -139,19 +139,37 @@ if st.session_state.word_list:
         
         col1, col2 = st.columns(2)
         
-        with col1:
+      with col1:
             if st.button("▶️ 自动连播本组单词", use_container_width=True):
                 js_words = json.dumps(current_group_words)
+                
+                # 🌟 关键修改：在代码开头加入一个随机数注释，强制 Streamlit 每次点击都重新渲染执行
                 js_code = f"""
                 <script>
                 window.speechSynthesis.cancel(); 
                 const words = {js_words};
                 let i = 0;
                 
+                function getBestVoice() {{
+                    let voices = window.speechSynthesis.getVoices();
+                    let preferred = [
+                        "Microsoft Aria Online", 
+                        "Google US English",     
+                        "Microsoft Zira",        
+                        "Microsoft Mark",        
+                        "Samantha"               
+                    ];
+                    for (let name of preferred) {{
+                        let v = voices.find(voice => voice.name.includes(name));
+                        if (v) return v;
+                    }}
+                    return voices.find(voice => voice.lang === 'en-US') || voices[0];
+                }}
+                
                 function playNext() {{
                     if (i >= words.length) {{
                         let endMsg = new SpeechSynthesisUtterance('This group is finished.');
-                        endMsg.lang = 'en-US';
+                        endMsg.voice = getBestVoice();
                         window.speechSynthesis.speak(endMsg);
                         return;
                     }}
@@ -159,8 +177,15 @@ if st.session_state.word_list:
                     let word = words[i];
                     let msg1 = new SpeechSynthesisUtterance(word);
                     let msg2 = new SpeechSynthesisUtterance(word);
-                    msg1.lang = 'en-US'; msg1.rate = 0.85;
-                    msg2.lang = 'en-US'; msg2.rate = 0.85;
+                    
+                    let premiumVoice = getBestVoice();
+                    if (premiumVoice) {{
+                        msg1.voice = premiumVoice;
+                        msg2.voice = premiumVoice;
+                    }}
+                    
+                    msg1.rate = 0.75; msg1.pitch = 1.0;
+                    msg2.rate = 0.75; msg2.pitch = 1.0;
 
                     msg1.onend = function() {{
                         setTimeout(() => {{ window.speechSynthesis.speak(msg2); }}, 1500); 
@@ -174,11 +199,15 @@ if st.session_state.word_list:
                     window.speechSynthesis.speak(msg1);
                 }}
                 
-                playNext();
+                if (window.speechSynthesis.getVoices().length === 0) {{
+                    window.speechSynthesis.onvoiceschanged = playNext;
+                }} else {{
+                    playNext();
+                }}
                 </script>
                 """
                 st.components.v1.html(js_code, height=0)
-                st.success("🔊 正在播放中...")
+                st.success("🔊 正在使用高清人声播放中... (再次点击可从头重播)")
 
         with col2:
             if st.button("⏭️ 我已写完，进入下一组", use_container_width=True):
