@@ -54,7 +54,6 @@ if 'input_text' not in st.session_state:
 # --- 加载 OCR 模型 ---
 @st.cache_resource
 def load_ocr_model():
-    # 在云端部署时如果没有 GPU，它会自动降级使用 CPU
     return easyocr.Reader(['en'], gpu=False) 
 
 # --- 1. 输入与设置区域 ---
@@ -140,39 +139,92 @@ if st.session_state.word_list:
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("▶️ 自动连播本组单词", use_container_width=True):
-                js_words = json.dumps(current_group_words)
-                js_code = f"""
-                <script>
-                window.speechSynthesis.cancel(); 
-                const words = {js_words};
-                let i = 0;
+            # 🌟 核心修复：使用纯 HTML/JS 按钮，彻底脱离 Streamlit 刷新机制，永不卡死
+            js_words = json.dumps(current_group_words)
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+            <style>
+            body {{
+                margin: 0;
+                font-family: "Source Sans Pro", sans-serif;
+            }}
+            .stButton {{
+                width: 100%;
+                background-color: #fff;
+                border: 1px solid rgba(49, 51, 63, 0.2);
+                color: #31333F;
+                padding: 0.25rem 0.75rem;
+                border-radius: 0.5rem;
+                min-height: 38.4px;
+                font-size: 1rem;
+                cursor: pointer;
+                transition: border-color 0.2s, color 0.2s;
+            }}
+            .stButton:hover {{
+                border-color: #FF4B4B;
+                color: #FF4B4B;
+            }}
+            .status {{
+                text-align: center;
+                font-size: 0.8rem;
+                color: #666;
+                margin-top: 6px;
+                min-height: 18px;
+            }}
+            </style>
+            </head>
+            <body>
+                <button class="stButton" onclick="startPlay()">▶️ 点击播放 / 重新播放</button>
+                <div class="status" id="status">准备就绪...</div>
                 
+                <script>
+                const words = {js_words};
+                let currentIndex = 0;
+                let isPlaying = false;
+                let timeout1, timeout2;
+
                 function getBestVoice() {{
                     let voices = window.speechSynthesis.getVoices();
-                    let preferred = [
-                        "Microsoft Aria Online", 
-                        "Google US English",     
-                        "Microsoft Zira",        
-                        "Microsoft Mark",        
-                        "Samantha"               
-                    ];
+                    let preferred = ["Microsoft Aria Online", "Google US English", "Microsoft Zira", "Samantha"];
                     for (let name of preferred) {{
                         let v = voices.find(voice => voice.name.includes(name));
                         if (v) return v;
                     }}
                     return voices.find(voice => voice.lang === 'en-US') || voices[0];
                 }}
-                
+
+                function startPlay() {{
+                    // 彻底清空可能卡死的语音队列
+                    window.speechSynthesis.pause();
+                    window.speechSynthesis.cancel();
+                    clearTimeout(timeout1);
+                    clearTimeout(timeout2);
+                    
+                    currentIndex = 0;
+                    isPlaying = true;
+                    document.getElementById('status').innerText = "🔊 正在使用高清人声播放中...";
+                    document.getElementById('status').style.color = "#FF4B4B";
+                    
+                    // 短暂延迟确保清理完成后再发音
+                    setTimeout(playNext, 100);
+                }}
+
                 function playNext() {{
-                    if (i >= words.length) {{
+                    if (!isPlaying) return;
+                    
+                    if (currentIndex >= words.length) {{
                         let endMsg = new SpeechSynthesisUtterance('This group is finished.');
                         endMsg.voice = getBestVoice();
                         window.speechSynthesis.speak(endMsg);
+                        document.getElementById('status').innerText = "✅ 本组播报完毕";
+                        document.getElementById('status').style.color = "#00cc66";
+                        isPlaying = false;
                         return;
                     }}
                     
-                    let word = words[i];
+                    let word = words[currentIndex];
                     let msg1 = new SpeechSynthesisUtterance(word);
                     let msg2 = new SpeechSynthesisUtterance(word);
                     
@@ -186,29 +238,29 @@ if st.session_state.word_list:
                     msg2.rate = 0.75; msg2.pitch = 1.0;
 
                     msg1.onend = function() {{
-                        setTimeout(() => {{ window.speechSynthesis.speak(msg2); }}, 1500); 
+                        if(!isPlaying) return;
+                        timeout1 = setTimeout(() => {{ 
+                            if(isPlaying) window.speechSynthesis.speak(msg2); 
+                        }}, 1500); 
                     }};
                     
                     msg2.onend = function() {{
-                        i++;
-                        setTimeout(playNext, 3000); 
+                        if(!isPlaying) return;
+                        currentIndex++;
+                        timeout2 = setTimeout(playNext, 3000); 
                     }};
                     
                     window.speechSynthesis.speak(msg1);
                 }}
-                
-                if (window.speechSynthesis.getVoices().length === 0) {{
-                    window.speechSynthesis.onvoiceschanged = playNext;
-                }} else {{
-                    playNext();
-                }}
                 </script>
-                """
-                st.components.v1.html(js_code, height=0)
-                st.success("🔊 正在使用高清人声播放中... (再次点击可从头重播)")
+            </body>
+            </html>
+            """
+            st.components.v1.html(html_content, height=80)
 
         with col2:
             if st.button("⏭️ 我已写完，进入下一组", use_container_width=True):
+                # 切换下一组时强制掐断当前声音
                 st.components.v1.html("<script>window.speechSynthesis.cancel();</script>", height=0)
                 st.session_state.group_index += 1
                 st.rerun()
